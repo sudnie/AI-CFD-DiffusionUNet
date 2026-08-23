@@ -1,0 +1,18 @@
+# 忽略数据与模型权重大文件
+*.npz
+*.pth
+Results/
+data/
+
+# 忽略 Python 缓存与虚拟环境
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+env/
+*.egg-info/
+
+# 忽略 IDE 配置
+.vscode/
+.idea/
+.DS_Store
