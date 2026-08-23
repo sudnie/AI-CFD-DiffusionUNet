@@ -1,7 +1,7 @@
-#/usr/bin/python3
+#!/usr/bin/python3
 """
 전체 크기 (145x689) C-grid DiffusionUNet 초고속 추론 및 물리 평가 스크립트
-기능: DDIM 50단계 빠른 샘플링 + 물리 역정규화 + 다차원 오차 통계 (L2, RMSE, MAE) + 상호 잠금(Locking) 시각화 Window
+기능: DDIM 50단계 빠른 샘플링 + 물리 역정규화 + 다차원 오차 통계 (L2, RMSE, MAE) + 고밀도 등치선 시각화
 """
 
 import os
@@ -40,6 +40,7 @@ def sample_ddim_batch(model, device, grid_x, grid_y, target_cond_batch, total_ti
         t_idx = times[i]
         t = torch.full((bsz,), t_idx, device=device, dtype=torch.long)
         
+        # 模型前向推理得到去噪后的预测场 x0
         x0_pred = model(x_t, grid_x_b, grid_y_b, t, target_cond_batch)
         x0_pred = torch.clamp(x0_pred, -1.0, 1.0)
         
@@ -142,7 +143,8 @@ def evaluate_dataset(dataset_name, data_npz, model, device, grid_x_tensor, grid_
         
         for j in range(gt_phys.shape[0]):
             idx = i + j
-            time_val = (batch_y_norm[j] * (l_max - l_min + 1e-8) + l_min).item()
+            # 反归一化条件标签以获取真实物理时间
+            time_val = (batch_y_norm[j, 2] * (l_max[0, 2] - l_min[0, 2] + 1e-8) + l_min[0, 2]).item() if batch_y_norm.ndim > 1 else (batch_y_norm[j] * (l_max - l_min + 1e-8) + l_min).item()
             metrics = calculate_metrics_single(gt_phys[j], pred_phys[j])
             
             entry = {
@@ -166,17 +168,13 @@ def evaluate_dataset(dataset_name, data_npz, model, device, grid_x_tensor, grid_
 
 
 # ==========================================
-# 4. 高精流场云图对比绘制函数 (叠加等值线 Contour Lines + 视图互锁)
-# ==========================================
-# ==========================================
-# 4. 고정밀 고밀도 등치선(Dense Contour Lines) 시각화 함수
+# 4. 高精流场云图对比绘制函数 (高密度等치선 叠加)
 # ==========================================
 def plot_contour_comparison(
     grid_x_raw, grid_y_raw, gt_sample, pred_sample, time_val, save_path
 ):
     ch_u, ch_v, ch_p = 1, 2, 3
 
-    # sharex=True, sharey=True 로 3x3 전체 서브플롯 뷰 인터로킹(Interlocking)
     fig, axes = plt.subplots(3, 3, figsize=(18, 12), sharex=True, sharey=True)
     fig.suptitle(
         f"Full Grid (145x689) High-Density Contour Lines Benchmark (Time = {time_val:.1f})",
@@ -198,20 +196,18 @@ def plot_contour_comparison(
         pred = pred_sample[ch_idx]
         abs_err = np.abs(gt - pred)
 
-        # 🌟 물리량 전체 최소/최대 기반으로 고밀도 등치선 레벨(35단계) 생성
         val_min = min(gt.min(), pred.min())
         val_max = max(gt.max(), pred.max())
         levels_dense = np.linspace(val_min, val_max, 35)
 
         # ----------------------------------------------------
-        # 1. Ground Truth (색상 구름도 + 고밀도 검은색 등치선)
+        # 1. Ground Truth
         # ----------------------------------------------------
         ax_gt = axes[row, 0]
         c0 = ax_gt.pcolormesh(
             grid_x_raw, grid_y_raw, gt, shading="gouraud", cmap=cmap_field
         )
-        # 🌟 35단계 고밀도 미세 등치선 (투명도 0.55, 선굵기 0.35)
-        contours0 = ax_gt.contour(
+        ax_gt.contour(
             grid_x_raw,
             grid_y_raw,
             gt,
@@ -220,7 +216,6 @@ def plot_contour_comparison(
             linewidths=0.35,
             alpha=0.55,
         )
-        # 5개마다 주요 등치선(Major Contour) 강조
         ax_gt.contour(
             grid_x_raw,
             grid_y_raw,
@@ -234,13 +229,13 @@ def plot_contour_comparison(
         fig.colorbar(c0, ax=ax_gt, label=unit)
 
         # ----------------------------------------------------
-        # 2. DDIM Prediction (동일한 고밀도 등치선 레벨 적용)
+        # 2. DDIM Prediction
         # ----------------------------------------------------
         ax_pred = axes[row, 1]
         c1 = ax_pred.pcolormesh(
             grid_x_raw, grid_y_raw, pred, shading="gouraud", cmap=cmap_field
         )
-        contours1 = ax_pred.contour(
+        ax_pred.contour(
             grid_x_raw,
             grid_y_raw,
             pred,
@@ -262,7 +257,7 @@ def plot_contour_comparison(
         fig.colorbar(c1, ax=ax_pred, label=unit)
 
         # ----------------------------------------------------
-        # 3. Absolute Error Map (오차 전용 흰색 고밀도 등치선)
+        # 3. Absolute Error Map
         # ----------------------------------------------------
         ax_err = axes[row, 2]
         c2 = ax_err.pcolormesh(
@@ -286,7 +281,6 @@ def plot_contour_comparison(
         )
         fig.colorbar(c2, ax=ax_err, label=unit)
 
-    # 🌟 에어포일 표면 형상 경계선(J=0) 굵은 검은색 강조 및 축 비율 고정
     for ax in axes.flatten():
         ax.plot(
             grid_x_raw[0, :],
@@ -300,12 +294,10 @@ def plot_contour_comparison(
         ax.set_ylabel("Y (m)")
 
     plt.tight_layout()
-
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"🖼️ 고밀도 등치선이 포함된 정밀 등고선도가 저장되었습니다: {save_path}")
-
-    print("🎨 상호 연동(Synchronized) 시각화 창을 엽니다. 확대하여 세부 와류 등치선을 확인해보세요...")
     plt.show()
+
 
 # ==========================================
 # 5. 메인 실행 진입점
@@ -320,12 +312,10 @@ if __name__ == "__main__":
     current_dir = os.path.dirname(os.path.abspath(__file__)) if "__file__" in locals() else "."
     results_dir = os.path.abspath(os.path.join(current_dir, "../Results"))
 
-    # 가중치 파일 탐색 (full 전용)
-    weights_path = os.path.join(results_dir, "airfoil_diffusion_cgrid_full_final.pth")
+    # 权重路径匹配（支持续训保存的各种命名）
+    weights_path = os.path.join(results_dir, "airfoil_diffusion_cgrid_final.pth")
     if not os.path.exists(weights_path):
-        weights_path = os.path.join(results_dir, "airfoil_diffusion_cgrid_full_ep1000.pth")
-    if not os.path.exists(weights_path):
-        weights_path = os.path.join(results_dir, "airfoil_diffusion_cgrid_full_ep500.pth")
+        weights_path = os.path.join(results_dir, "airfoil_diffusion_cgrid_ep3000.pth")
 
     norm_path = os.path.join(results_dir, "normalization_factors_full.npz")
     train_data_path = os.path.join(results_dir, "Diffusion_airfoil_unsteady_full_train.npz")
@@ -334,8 +324,11 @@ if __name__ == "__main__":
     model = DiffusionUNet(flow_ch=4, coord_ch=2, cond_dim=128, base_ch=48).to(device)
 
     if os.path.exists(weights_path):
-        model.load_state_dict(torch.load(weights_path, map_location=device, weights_only=True))
-        print(f"✅ 가중치 모델 로드 성공: {weights_path}")
+        checkpoint = torch.load(weights_path, map_location=device, weights_only=True)
+        # 兼容完整 Checkpoint 字典结构与纯 state_dict 结构
+        state_dict = checkpoint['model_state_dict'] if 'model_state_dict' in checkpoint else checkpoint
+        model.load_state_dict(state_dict)
+        print(f"✅ 权重模型 로드 성공: {weights_path}")
     else:
         raise FileNotFoundError(f"❌ 가중치 파일을 찾을 수 없습니다: {weights_path}")
 
@@ -357,15 +350,15 @@ if __name__ == "__main__":
         grid_x_tensor = grid_x_tensor.unsqueeze(0).unsqueeze(0)
         grid_y_tensor = grid_y_tensor.unsqueeze(0).unsqueeze(0)
 
-    # 데이터셋 추론 실행
+    # 运行数据集批量推理评估
     df_train, train_gt, train_pred = evaluate_dataset("Train Dataset", train_data, model, device, grid_x_tensor, grid_y_tensor, f_min, f_max, l_min, l_max, ddim_steps=DDIM_STEPS, batch_size=BATCH_SIZE)
     df_test, test_gt, test_pred = evaluate_dataset("Test Dataset", test_data, model, device, grid_x_tensor, grid_y_tensor, f_min, f_max, l_min, l_max, ddim_steps=DDIM_STEPS, batch_size=BATCH_SIZE)
 
-    # CSV 파일 저장
+    # 保存评估结果 CSV
     df_train.to_csv(os.path.join(results_dir, "eval_full_train_metrics.csv"), index=False)
     df_test.to_csv(os.path.join(results_dir, "eval_full_test_metrics.csv"), index=False)
 
-    # 전체 통계 결과 출력
+    # 输出统计报告
     print("\n==========================================================================")
     print("📊 [전체 크기 (145x689) Diffusion 물리 평가 최종 보고서]")
     print("==========================================================================")
@@ -379,7 +372,7 @@ if __name__ == "__main__":
         print(f"  - P 압력장 : L2 = {df['l2_p (%)'].mean():6.3f}% | RMSE = {df['rmse_p'].mean():.4f} Pa  | MAE = {df['mae_p'].mean():.4f} Pa")
         print("==========================================================================\n")
 
-    # 🌟 [최고 성능(L2 오차 최소) 샘플 추출 및 상세 지표 출력]
+    # 提取表现最佳的测试样本进行精细化可视化
     best_idx = df_test["comb_l2 (%)"].idxmin()
     best_sample_info = df_test.loc[best_idx]
 
