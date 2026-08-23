@@ -1,0 +1,7 @@
+# Auto-generated requirements for Python 3.12.0
+matplotlib
+numpy
+pandas
+tensorflow
+torch
+tqdm
