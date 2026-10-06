@@ -1,0 +1,12 @@
+﻿# HighRes (AI-CFD DiffusionUNet) - Python 의존성
+# 설치: pip install -r requirements.txt
+#
+# 주의: torch 버전은 CUDA 환경에 맞춰 설치할 것.
+#   예) pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+
+torch>=2.0
+numpy>=1.24
+pandas>=2.0
+matplotlib>=3.7
+scipy>=1.10
+tqdm>=4.65

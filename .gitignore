@@ -1,0 +1,34 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 결과물 / 데이터 (용량 큼) — 필요 시 LFS 로 관리
+Results/
+results/
+*.pth
+*.pt
+*.npz
+*.pkl
+*.h5
+*.mat
+*.npy
+*.csv
+
+# CFD 원시 격자 데이터
+Database/
+*.dat
+*.uns
+*.unw
+*.cgns
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 가상환경
+.venv/
+venv/
+env/
