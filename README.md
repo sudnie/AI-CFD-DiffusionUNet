@@ -1,5 +1,9 @@
 # HighRes AI-CFD DiffusionUNet (고해상도 유동장 예측)
 
+**관련 학술 논문**:  
+JIN ZHEXU\(^1\), 신정훈\(^2\), 조금원\(^3*\) (금오공과대학교, 2024).  
+"High-Resolution Diffusion Model을 이용한 익형 유동장 예측"
+
 ## 프로젝트 구조
 
 ```
